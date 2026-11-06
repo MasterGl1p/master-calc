@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Мастер на час — Барнаул</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    background: #f0f2f5; min-height: 100vh;
+    display: flex; justify-content: center; padding: 12px;
+  }
+  .app {
+    width: 100%; max-width: 480px; background: #fff;
+    border-radius: 16px; box-shadow: 0 4px 24px rgba(0,0,0,.08);
+    display: flex; flex-direction: column; height: 92vh; overflow: hidden;
+  }
+  .header {
+    background: linear-gradient(135deg, #2b6cb0, #2c5282);
+    color: #fff; padding: 16px; text-align: center; flex-shrink: 0;
+  }
+  .header h1 { font-size: 18px; }
+  .header p { font-size: 13px; opacity: .85; margin-top: 4px; }
+  #chat { flex: 1; overflow-y: auto; padding: 14px; }
+  .msg {
+    max-width: 85%; padding: 10px 14px; border-radius: 14px;
+    margin-bottom: 10px; font-size: 14.5px; line-height: 1.45;
+    white-space: pre-wrap; word-wrap: break-word;
+  }
+  .bot { background: #eef2f7; color: #1a202c; align-self: flex-start;
+         border-bottom-left-radius: 4px; }
+  .user { background: #2b6cb0; color: #fff; margin-left: auto;
+          border-bottom-right-radius: 4px; }
+  #btns {
+    padding: 8px 14px 14px; display: flex; flex-wrap: wrap; gap: 8px;
+    flex-shrink: 0;
+  }
+  .chip {
+    background: #fff; color: #2b6cb0; border: 1.5px solid #2b6cb0;
+    border-radius: 20px; padding: 9px 14px; font-size: 14px;
+    cursor: pointer; transition: background .15s;
+  }
+  .chip:hover { background: #ebf4ff; }
+  .chip:active { background: #2b6cb0; color: #fff; }
+  #form {
+    display: flex; gap: 8px; padding: 10px 14px;
+    border-top: 1px solid #e2e8f0; flex-shrink: 0; background: #fff;
+  }
+  #input {
+    flex: 1; border: 1.5px solid #cbd5e0; border-radius: 22px;
+    padding: 10px 16px; font-size: 15px; outline: none;
+  }
+  #input:focus { border-color: #2b6cb0; }
+  #send {
+    background: #2b6cb0; color: #fff; border: none; border-radius: 22px;
+    padding: 10px 18px; font-size: 15px; cursor: pointer;
+  }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+  .actions a, .actions button {
+    flex: 1; min-width: 130px; text-align: center; text-decoration: none;
+    border-radius: 12px; padding: 11px 10px; font-size: 14px; font-weight: 600;
+    cursor: pointer; border: none;
+  }
+  .act-call { background: #38a169; color: #fff; }
+  .act-tg   { background: #2b6cb0; color: #fff; }
+  .act-copy { background: #edf2f7; color: #2d3748; border: 1.5px solid #cbd5e0 !important; }
+  .card {
+    background: #f0fff4; border: 1.5px solid #9ae6b4; border-radius: 12px;
+    padding: 12px; margin-bottom: 10px; font-size: 14px; white-space: pre-wrap;
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="header">
+    <h1>🔧 Мастер на час — Барнаул</h1>
+    <p>Ответьте на пару вопросов — узнайте цену до выезда</p>
+  </div>
+  <div id="chat"></div>
+  <div id="btns"></div>
+  <form id="form" autocomplete="off">
+    <input id="input" type="text" placeholder="Напишите ответ или нажмите кнопку…">
+    <button id="send" type="submit">➤</button>
+  </form>
+</div>
+
+<script>
+"use strict";
+
+// ==== НАСТРОЙКИ (поменяй на свои) ====
+var CONFIG = {
+  phone: "+79000000000",   // телефон мастера — кнопка «Позвонить»
+  tg: "gl_1p"              // твой Telegram-юзернейм без @ — кнопка «Написать»
+};
+// =====================================
+
+var SERVICES = [
+  "Навеска (полка, картина, зеркало)",
+  "Монтаж карниза",
+  "Установка ТВ на стену",
+  "Монтаж плинтуса",
+  "Дверная ручка / доводчик",
+  "Сантехника",
+  "Электрика",
+  "Сборка мебели",
+  "Мастер на час",
+  "Другое"
+];
+var SAN_LIST = [
+  "Замена смесителя", "Замена/установка сифона", "Установка мойки",
+  "Установка раковины", "Стиральная/посудомоечная машина",
+  "Установка унитаза", "Установка ванны", "Устранение засор"
+];
+SAN_LIST[7] = "Устранение засора";
+
+var EL_LIST = [
+  "Замена розетки/выключателя",
+  "Установка люстры/светильника",
+  "Подключение варочной панели/вытяжки"
+];
+var MEB_LIST = [
+  "Шкаф-купе", "Шкаф обычный/прихожая", "Кровать",
+  "Комод/тумба/стол", "Кухонный гарнитур"
+];
+
+var step = "start";
+var d = {};
+var chat = document.getElementById("chat");
+var btns = document.getElementById("btns");
+var form = document.getElementById("form");
+var input = document.getElementById("input");
+
+function esc(s) {
+  return String(s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+function toBr(s) { return esc(s).replace(/\n/g, "<br>"); }
+
+function say(text) {
+  var div = document.createElement("div");
+  div.className = "msg bot";
+  div.innerHTML = toBr(text);
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function userSay(text) {
+  var div = document.createElement("div");
+  div.className = "msg user";
+  div.textContent = text;
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function setBtns(list) {
+  btns.innerHTML = "";
+  if (!list) return;
+  for (var i = 0; i < list.length; i++) {
+    (function (label) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "chip";
+      b.textContent = label;
+      b.onclick = function () { send(label); };
+      btns.appendChild(b);
+    })(list[i]);
+  }
+}
+
+function ask(text, options) {
+  say(text);
+  setBtns(options || []);
+}
+
+function num(s) {
+  var v = parseFloat(String(s).replace(",", ".").trim());
+  return isNaN(v) ? null : v;
+}
+
+function send(text) {
+  var t = String(text).trim();
+  if (!t) return;
+  userSay(t);
+  setBtns([]);
+  setTimeout(function () { handle(t); }, 120);
+}
+
+form.addEventListener("submit", function (e) {
+  e.preventDefault();
+  var v = input.value;
+  input.value = "";
+  send(v);
+});
+
+function toOrder(summary, price) {
+  d.summary = summary;
+  d.price = price;
+  step = "order_name";
+  ask("✅ Предварительная цена: " + price +
+      "\n\n⚠️ Цена фиксируется до выезда и не меняется на месте. " +
+      "Если в процессе выяснится дополнительная работа — согласуем с вами отдельно." +
+      "\n\nОформим заявку? Напишите ваше имя:");
+}
+
+function reset() {
+  step = "menu";
+  d = {};
+  ask("Выберите услугу 👇", SERVICES);
+}
+
+function finish() {
+  var text = "ЗАЯВКА\nУслуга: " + d.summary +
+    "\nЦена: " + d.price +
+    "\nИмя: " + (d.name || "") +
+    "\nАдрес: " + (d.addr || "") +
+    "\nВремя: " + (d.time || "") +
+    "\nТелефон: " + (d.phone || "");
+  d.final = text;
+
+  var card = document.createElement("div");
+  card.className = "card";
+  card.textContent = "📩 Заявка готова!\nМастер подтвердит заказ и пришлёт точную цену.\nГарантия на работы — 30 дней.\n\n" + text;
+  chat.appendChild(card);
+
+  var row = document.createElement("div");
+  row.className = "actions";
+
+  var aCall = document.createElement("a");
+  aCall.className = "act-call";
+  aCall.href = "tel:" + CONFIG.phone.replace(/[^+\d]/g, "");
+  aCall.textContent = "📞 Позвонить мастеру";
+
+  var aTg = document.createElement("a");
+  aTg.className = "act-tg";
+  aTg.href = "https://t.me/" + CONFIG.tg;
+  aTg.target = "_blank";
+  aTg.textContent = "💬 Написать в Telegram";
+
+  var bCopy = document.createElement("button");
+  bCopy.type = "button";
+  bCopy.className = "act-copy";
+  bCopy.textContent = "📋 Скопировать заявку";
+  bCopy.onclick = function () {
+    function fallback() {
+      var ta = document.createElement("textarea");
+      ta.value = d.final;
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand("copy"); } catch (e) {}
+      document.body.removeChild(ta);
+      bCopy.textContent = "✓ Скопировано";
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(d.final).then(
+        function () { bCopy.textContent = "✓ Скопировано"; },
+        fallback
+      );
+    } else { fallback(); }
+  };
+
+  row.appendChild(aCall);
+  row.appendChild(aTg);
+  row.appendChild(bCopy);
+  chat.appendChild(row);
+  chat.scrollTop = chat.scrollHeight;
+
+  step = "menu";
+  d = {};
+  setBtns(["Начать заново"]);
+}
+
+function goMenu(t) {
+  if (t === SERVICES[0]) { d.service = t; step = "n1"; ask("Что нужно повесить?", ["Полка", "Картина", "Зеркало"]); }
+  else if (t === SERVICES[1]) { d.service = t; step = "k1"; ask("Какой карниз?", ["Настенный", "Потолочный"]); }
+  else if (t === SERVICES[2]) { d.service = t; step = "t1"; ask("Диагональ телевизора?", ["До 43\u2033", "43–55\u2033", "Больше 55\u2033"]); }
+  else if (t === SERVICES[3]) { d.service = t; step = "p1"; ask("Какой плинтус?", ["Напольный", "Потолочный (галтель)"]); }
+  else if (t === SERVICES[4]) { d.service = t; step = "h1"; ask("Что нужно?", ["Замена ручки", "Установка доводчика", "И то и другое"]); }
+  else if (t === SERVICES[5]) { d.service = t; step = "san1"; ask("Что нужно сделать?", SAN_LIST); }
+  else if (t === SERVICES[6]) { d.service = t; step = "el1"; ask("Что нужно?", EL_LIST); }
+  else if (t === SERVICES[7]) { d.service = t; step = "meb1"; ask("Что собираем?", MEB_LIST); }
+  else if (t === SERVICES[8]) { d.service = t; step = "hr1"; ask("Перечислите все задачи списком — можно одним сообщением."); }
+  else if (t === SERVICES[9]) { d.service = t; step = "other"; ask("Опишите словами, что случилось (можно с фото). Мастер уточнит детали и назовёт цену."); }
+  else { ask("Выберите услугу из списка 👇", SERVICES); }
+}
+
+function handle(t) {
+  if (t === "/start" || t === "Начать заново") { reset(); return; }
+
+  switch (step) {
+
+    case "start":
+      step = "menu";
+      goMenu(t);
+      break;
+
+    case "menu":
+      goMenu(t);
+      break;
+
+    // ---------- НАВЕСКА ----------
+    case "n1":
+      d.item = t; step = "n2";
+      ask("Сколько предметов нужно повесить? Напишите число:");
+      break;
+    case "n2": {
+      var n2 = num(t);
+      if (!n2 || n2 < 1) { ask("Напишите число больше 0:"); break; }
+      d.count = n2; step = "n3";
+      ask("Из чего стена?", ["Бетон/кирпич", "Гипсокартон", "Дерево"]);
+      break;
+    }
+    case "n3":
+      d.wall = t;
+      if (t === "Гипсокартон") {
+        step = "n4";
+        ask("Есть ли за гипсокартоном закладная (усиленная планка)?", ["Да, есть", "Не знаю", "Нет"]);
+      } else {
+        step = "n5";
+        ask("Крепёж (саморезы, дюбели) у вас есть?", ["Да, есть", "Нужна покупка"]);
+      }
+      break;
+    case "n4":
+      d.zaklad = t; step = "n5";
+      ask("Крепёж (саморезы, дюбели) у вас есть?", ["Да, есть", "Нужна покупка"]);
+      break;
+    case "n5": {
+      var extra5 = t === "Нужна покупка" ? "\n+ стоимость расходников по чеку" : "";
+      if ((d.zaklad === "Не знаю" || d.zaklad === "Нет") && d.item === "Зеркало") {
+        extra5 += "\n⚠️ Для тяжёлого предмета на гипсокартоне без закладной нужен спецкрепёж — мастер подскажет на месте.";
+      }
+      toOrder("Навеска: " + d.item + " ×" + d.count + ", стена: " + d.wall + ", крепёж: " + t,
+              Math.round(350 * d.count) + " ₽" + extra5);
+      break;
+    }
+
+    // ---------- КАРНИЗ ----------
+    case "k1":
+      d.type = t; step = "k2";
+      ask("Примерная длина карниза в метрах? (число)");
+      break;
+    case "k2": {
+      var k2 = num(t);
+      if (!k2 || k2 <= 0) { ask("Напишите длину числом, например 2.5"); break; }
+      d.length = k2; step = "k3";
+      ask("Из чего стена?", ["Бетон/кирпич", "Гипсокартон", "Дерево"]);
+      break;
+    }
+    case "k3":
+      d.wall = t; step = "k4";
+      ask("Карниз уже куплен?", ["Да", "Нет — помогите подобрать и купить"]);
+      break;
+    case "k4": {
+      var ek4 = "";
+      if (d.type === "Потолочный" && d.length > 2.5) {
+        ek4 = "\n+ 450 ₽ (1 час) — длинный потолочный карниз монтируется вдвоём";
+      }
+      toOrder("Карниз: " + d.type + ", " + d.length + " м, стена: " + d.wall + ", куплен: " + t,
+              "от 500 ₽" + ek4);
+      break;
+    }
+
+    // ---------- ТВ ----------
+    case "t1":
+      d.diag = t; step = "t2";
+      ask("Из чего стена?", ["Бетон/кирпич", "Гипсокартон", "Дерево"]);
+      break;
+    case "t2":
+      if (t === "Гипсокартон" && d.diag === "Больше 55\u2033") {
+        say("⚠️ На гипсокартон без закладной большой ТВ вешать нельзя — стена не выдержит. Пришлите фото стены, мастер подскажет решение.");
+      }
+      d.wall = t; step = "t3";
+      ask("Кронштейн есть?", ["Да", "Нет — подберите и привезите"]);
+      break;
+    case "t3":
+      d.bracket = t; step = "t4";
+      ask("Нужно ли спрятать провода?", ["Да, в кабель-канал", "Нет, не нужно"]);
+      break;
+    case "t4":
+      d.wires = t; step = "t5";
+      ask("Сколько метров кабель-канала примерно нужно? (если не нужно — напишите 0)");
+      break;
+    case "t5": {
+      var L5 = num(t) || 0;
+      var et5 = "";
+      if (d.bracket === "Нет — подберите и привезите") et5 += "\n+ стоимость кронштейна по чеку";
+      if (L5 > 0) et5 += "\n+ " + Math.round(100 * L5) + " ₽ кабель-канал (" + L5 + " м)";
+      toOrder("ТВ " + d.diag + ", стена: " + d.wall + ", кронштейн: " + d.bracket + ", канал: " + L5 + " м",
+              "от 800 ₽" + et5);
+      break;
+    }
+
+    // ---------- ПЛИНТУС ----------
+    case "p1":
+      d.type = t; step = "p2";
+      ask("Материал?", ["Пластик", "МДФ или дерево", "Полиуретан"]);
+      break;
+    case "p2":
+      d.mat = t; step = "p3";
+      ask("Примерная общая длина в метрах? (если не знаете — напишите периметр комнаты)");
+      break;
+    case "p3": {
+      var p3 = num(t);
+      if (!p3 || p3 <= 0) { ask("Напишите длину числом, например 18"); break; }
+      d.length = p3; step = "p4";
+      ask("Нужен ли плинтус с кабель-каналом?", ["Да", "Нет"]);
+      break;
+    }
+    case "p4":
+      toOrder("Плинтус: " + d.type + ", " + d.mat + ", кабель-канал: " + t + ", " + d.length + " м",
+              Math.round(120 * d.length) + " ₽ (" + d.length + " м)");
+      break;
+
+    // ---------- РУЧКА / ДОВОДЧИК ----------
+    case "h1":
+      d.what = t; step = "h2";
+      ask("Какая дверь?", ["Межкомнатная", "Входная (металлическая)"]);
+      break;
+    case "h2":
+      d.door = t; step = "h3";
+      ask("Фурнитура уже куплена?", ["Да", "Нет — помогите подобрать"]);
+      break;
+    case "h3": {
+      var base3 = { "Замена ручки": 400, "Установка доводчика": 900, "И то и другое": 1200 }[d.what] || 400;
+      var eh3 = "";
+      if (d.door === "Входная (металлическая)" && String(d.what).indexOf("доводчик") >= 0) {
+        eh3 = "\n⚠️ Для тяжёлой металлической двери нужен усиленный доводчик — мастер подберёт модель";
+      }
+      toOrder(d.what + ", дверь: " + d.door + ", фурнитура: " + t, "от " + base3 + " ₽" + eh3);
+      break;
+    }
+
+    // ---------- САНТЕХНИКА ----------
+    case "san1":
+      if (t === "Замена смесителя") { d.sub = t; step = "s1a"; ask("Где меняем?", ["Кухня", "Ванная"]); }
+      else if (t === "Замена/установка сифона") { d.sub = t; step = "s2a"; ask("Где сифон?", ["Кухонная мойка", "Раковина в ванной"]); }
+      else if (t === "Установка мойки") { d.sub = t; step = "s3a"; ask("Тип мойки?", ["Врезная", "Накладная"]); }
+      else if (t === "Установка раковины") { d.sub = t; step = "s4a"; ask("Тип раковины?", ["Подвесная", "Накладная (тюльпан)"]); }
+      else if (t === "Стиральная/посудомоечная машина") { d.sub = t; step = "s5a"; ask("Машина уже стоит на месте установки?", ["Да, стоит", "Нет, нужна помощь с подъёмом"]); }
+      else if (t === "Установка унитаза") { d.sub = t; step = "s6a"; ask("Замена старого или установка нового?", ["Замена старого", "Новый на подготовленное место"]); }
+      else if (t === "Установка ванны") { d.sub = t; step = "s7a"; ask("Какая ванна?", ["Акриловая", "Стальная"]); }
+      else if (t === "Устранение засора") { d.sub = t; step = "s8a"; ask("Где засор?", ["Мойка на кухне", "Ванна", "Унитаз"]); }
+      else { ask("Выберите вариант из списка 👇", SAN_LIST); }
+      break;
+    case "s1a":
+      d.where = t; step = "s1b";
+      ask("Новый смеситель куплен?", ["Да", "Нет — подберите"]);
+      break;
+    case "s1b":
+      d.bought = t; step = "s1c";
+      ask("Есть ли кран для перекрытия воды на подводке к смесителю?", ["Да", "Не знаю / нет"]);
+      break;
+    case "s1c": {
+      var es1 = t === "Да" ? "" : "\n⚠️ Возможно, потребуется перекрыть воду на стояке — мастер уточнит порядок отключения заранее";
+      toOrder("Замена смесителя, место: " + d.where + ", куплен: " + d.bought, "от 450 ₽" + es1);
+      break;
+    }
+    case "s2a":
+      d.where = t; step = "s2b";
+      ask("Новый сифон куплен?", ["Да", "Нет — подберите"]);
+      break;
+    case "s2b":
+      toOrder("Сифон: " + d.where + ", куплен: " + t, "от 450 ₽");
+      break;
+    case "s3a":
+      d.sinkType = t; step = "s3b";
+      ask("Отверстие в столешнице уже вырезано?", ["Да", "Нет"]);
+      break;
+    case "s3b": {
+      var es3 = t === "Нет" ? "\n+ 300 ₽ вырезка отверстия" : "";
+      toOrder("Мойка " + d.sinkType + ", отверстие: " + t, "от 550 ₽" + es3);
+      break;
+    }
+    case "s4a":
+      d.basin = t; step = "s4b";
+      ask("Подводка воды и вывод канализации на месте?", ["Да", "Не знаю"]);
+      break;
+    case "s4b":
+      toOrder("Раковина: " + d.basin + ", выводы: " + t, "от 850 ₽");
+      break;
+    case "s5a":
+      d.place = t; step = "s5b";
+      ask("Есть ли готовый отвод воды (кран)?", ["Да", "Нет"]);
+      break;
+    case "s5b": {
+      var es5 = t === "Нет" ? "\n+ 400 ₽ установка крана-тройника" : "";
+      toOrder("Подключение машинки, стоит: " + d.place + ", отвод: " + t, "от 1000 ₽" + es5);
+      break;
+    }
+    case "s6a":
+      d.kind = t; step = "s6b";
+      ask("Нужно ли демонтировать старый?", ["Да", "Нет, старого уже нет"]);
+      break;
+    case "s6b": {
+      var es6 = t === "Да" ? "\n+ 500 ₽ демонтаж" : "";
+      toOrder("Унитаз: " + d.kind + ", демонтаж: " + t, "от 1500 ₽" + es6);
+      break;
+    }
+    case "s7a":
+      d.bathType = t; step = "s7b";
+      ask("Нужно ли демонтировать старую?", ["Да", "Нет"]);
+      break;
+    case "s7b":
+      d.dem = t; step = "s7c";
+      ask("Есть ли новая обвязка (сифон)?", ["Да", "Нет"]);
+      break;
+    case "s7c": {
+      var es7 = "";
+      if (d.dem === "Да") es7 += "\n+ 800 ₽ демонтаж";
+      if (t === "Нет") es7 += "\n+ стоимость обвязки по чеку";
+      toOrder("Ванна: " + d.bathType + ", демонтаж: " + d.dem + ", обвязка: " + t, "от 1500 ₽" + es7);
+      break;
+    }
+    case "s8a":
+      say("ℹ️ Если простая чистка не поможет и засор в общем стояке — понадобится вызов сантехника управляющей компании. Мастер предупредит заранее.");
+      toOrder("Устранение засора: " + t, "от 800 ₽");
+      break;
+
+    // ---------- ЭЛЕКТРИКА ----------
+    case "el1":
+      if (t === EL_LIST[0]) { d.sub = t; step = "e2"; ask("Куда монтируется?", ["Стена (бетон)", "Дерево", "Металл"]); }
+      else if (t === EL_LIST[1]) { d.sub = t; step = "e7"; ask("Какой потолок?", ["Обычный", "Натяжной"]); }
+      else if (t === EL_LIST[2]) { d.sub = t; step = "e10"; ask("Что подключаем?", ["Варочная панель (электро)", "Вытяжка"]); }
+      else { ask("Выберите вариант из списка 👇", EL_LIST); }
+      break;
+    case "e2":
+      d.wall = t; step = "e3";
+      ask("Установка в подрозетник?", ["Да", "Нет"]);
+      break;
+    case "e3":
+      if (t === "Да") {
+        step = "e4";
+        ask("Подрозетник у вас есть или нужно купить?", ["Да, есть", "Нужна покупка"]);
+      } else {
+        d.box = "Нет"; step = "e5";
+        ask("Сколько розеток/выключателей нужно заменить? Напишите число:");
+      }
+      break;
+    case "e4":
+      d.box = t; step = "e5";
+      ask("Сколько розеток/выключателей нужно заменить? Напишите число:");
+      break;
+    case "e5": {
+      var e5 = num(t);
+      if (!e5 || e5 < 1) { ask("Напишите число больше 0:"); break; }
+      d.count = e5; step = "e6";
+      ask("Обычная розетка или для мощной техники?", ["Обычная", "Силовая (плита, духовка)"]);
+      break;
+    }
+    case "e6": {
+      var ee6 = "";
+      if (String(t).indexOf("Силовая") === 0) {
+        ee6 = "\n⚠️ Для мощной техники нужна отдельная линия. Если её нет — потребуется работа со щитком, мастер оценит отдельно";
+      }
+      toOrder("Розетки/выключатели: стена " + d.wall + ", подрозетник: " + d.box + ", " + d.count + " шт., " + t,
+              Math.round(250 * d.count) + " ₽ (" + d.count + " шт.)" + ee6);
+      break;
+    }
+    case "e7":
+      d.ceil = t; step = "e8";
+      ask("Крепление на потолке?", ["Крюк", "Планка", "Не знаю"]);
+      break;
+    case "e8":
+      d.mount = t; step = "e9";
+      ask("Люстра/светильник куплены?", ["Да", "Нет"]);
+      break;
+    case "e9": {
+      var ee9 = d.ceil === "Натяжной" ? "\n⚠️ Проверим наличие монтажной платформы: + 150 ₽" : "";
+      toOrder("Люстра: потолок " + d.ceil + ", крепление " + d.mount + ", куплена: " + t, "от 500 ₽" + ee9);
+      break;
+    }
+    case "e10":
+      if (t === "Варочная панель (электро)") {
+        step = "e11";
+        ask("Есть ли отдельная розетка/линия нужной мощности?", ["Да", "Не знаю", "Нет"]);
+      } else {
+        toOrder("Подключение: " + t, "от 650 ₽");
+      }
+      break;
+    case "e11": {
+      var ee11 = t === "Да" ? "" : "\n⚠️ Для варочной панели нужна отдельная линия нужного сечения. Пришлите фото щитка — мастер оценит";
+      toOrder("Варочная панель, линия: " + t, "от 650 ₽" + ee11);
+      break;
+    }
+
+    // ---------- МЕБЕЛЬ ----------
+    case "meb1":
+      d.item = t;
+      if (t === "Шкаф-купе") { step = "m2"; ask("Сколько дверей-купе?", ["Одна", "Две", "Три"]); }
+      else if (t === "Кровать") { step = "m4a"; ask("С подъёмным механизмом?", ["Да", "Нет"]); }
+      else if (t === "Кухонный гарнитур") { step = "m6"; ask("Длина гарнитура в погонных метрах? (число)"); }
+      else { step = "m4"; ask("Все ли детали и фурнитура на месте?", ["Да", "Часть утеряна", "Не проверял"]); }
+      break;
+    case "m2":
+      d.doors = t; step = "m3";
+      ask("Корпус уже стоит?", ["Да", "Нет, с нуля"]);
+      break;
+    case "m3":
+      d.body = t; step = "m4";
+      ask("Все ли детали и фурнитура на месте?", ["Да", "Часть утеряна", "Не проверял"]);
+      break;
+    case "m4a":
+      d.lift = t; step = "m4";
+      ask("Все ли детали и фурнитура на месте?", ["Да", "Часть утеряна", "Не проверял"]);
+      break;
+    case "m6": {
+      var m6 = num(t);
+      if (!m6 || m6 <= 0) { ask("Напишите длину числом, например 3.2"); break; }
+      d.klen = m6; step = "m7";
+      ask("Нужно ли подключить и врезать мойку?", ["Да", "Нет"]);
+      break;
+    }
+    case "m7":
+      d.ksink = t; step = "m8";
+      ask("Навесить верхние шкафы?", ["Да", "Нет"]);
+      break;
+    case "m8":
+      step = "m4";
+      ask("Все ли детали и фурнитура на месте?", ["Да", "Часть утеряна", "Не проверял"]);
+      break;
+    case "m4":
+      if (t === "Часть утеряна") {
+        say("⚠️ Может потребоваться докупка крепежа. Уточним по фото комплектации.");
+      } else if (t === "Не проверял") {
+        say("👍 Если чего-то не хватит — мастер предупредит заранее, цену согласуем отдельно.");
+      }
+      d.kit = t; step = "m5";
+      ask("Мебель уже занесена в комнату, где будет стоять?", ["Да", "Нет, нужна помощь с подъёмом"]);
+      break;
+    case "m5": {
+      var base5 = { "Шкаф-купе": 1600, "Шкаф обычный/прихожая": 900, "Кровать": 900,
+                    "Комод/тумба/стол": 800 }[d.item] || 800;
+      var price5, em5 = "";
+      if (d.item === "Кухонный гарнитур") {
+        price5 = "от " + Math.round(1100 * (d.klen || 1)) + " ₽";
+        if (d.ksink === "Да") em5 += "\n+ врезка и подключение мойки — по прайсу сантехники";
+      } else {
+        price5 = "от " + base5 + " ₽";
+      }
+      if (d.item === "Кровать" && d.lift === "Да") em5 += "\n+ 450 ₽ (1 час) за подъёмный механизм";
+      if (d.body === "Нет, с нуля") em5 += "\n⚠️ Сборка с нуля — возможно, потребуется больше времени, мастер уточнит по фото инструкции";
+      toOrder("Мебель: " + d.item + ", комплект: " + d.kit + ", подъём: " + t, price5 + em5);
+      break;
+    }
+
+    // ---------- МАСТЕР НА ЧАС ----------
+    case "hr1":
+      d.tasks = t; step = "hr2";
+      ask("Примерно сколько времени это займёт?", ["1–2 часа", "Полдня (3–4 часа)", "Не знаю — пусть оценит на месте"]);
+      break;
+    case "hr2":
+      toOrder("Мастер на час. Задачи: " + d.tasks + ". Ориентир: " + t,
+              "450 ₽/час, минимальный заказ 1000 ₽");
+      break;
+
+    // ---------- ДРУГОЕ ----------
+    case "other":
+      d.summary = "Другое: " + t;
+      d.price = "Мастер уточнит детали и назовёт цену";
+      step = "order_name";
+      ask("Принял! Напишите ваше имя:");
+      break;
+
+    // ---------- ЗАЯВКА ----------
+    case "order_name":
+      d.name = t; step = "order_addr";
+      ask("Приятно познакомиться, " + t + "! Ваш район/адрес:");
+      break;
+    case "order_addr":
+      d.addr = t; step = "order_time";
+      ask("Удобные дата и время?", ["Сегодня", "Завтра", "Напишу свою дату"]);
+      break;
+    case "order_time":
+      d.time = t; step = "order_phone";
+      ask("Телефон для связи:");
+      break;
+    case "order_phone":
+      d.phone = t;
+      finish();
+      break;
+
+    default:
+      reset();
+  }
+}
+
+// Старт
+say("Здравствуйте! 👋 Я помогу рассчитать стоимость работ мастера.\nВыберите услугу:");
+setBtns(SERVICES);
+step = "menu";
+</script>
+</body>
+</html>
